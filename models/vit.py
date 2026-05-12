@@ -82,7 +82,7 @@ class VisionTransformer(nn.Module):
     Vision Transformer for 4-class pet classification.
 
     Args:
-        embed_dim:      Patch embedding dimension (default: 128)
+        embed_dim:      Patch embedding dimension (default: 32)
         hidden_dim:     FFN hidden dimension (typically 2-4x embed_dim)
         num_channels:   Input channels (3 for RGB)
         num_heads:      Attention heads per block
@@ -94,7 +94,7 @@ class VisionTransformer(nn.Module):
         use_pos_embedding: Toggle positional embeddings
     """
 
-    def __init__(self, embed_dim=128, hidden_dim=512, num_channels=3,
+    def __init__(self, embed_dim=32, hidden_dim=128, num_channels=3,
                  num_heads=4, num_layers=4, num_classes=4,
                  patch_size=8, num_patches=256,
                  dropout=0.0, use_pos_embedding=True):
