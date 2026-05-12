@@ -57,11 +57,25 @@ aiml331-cv-assignment3/
 ```bash
 git clone https://github.com/YOUR_USERNAME/aiml331-cv-assignment3.git
 cd aiml331-cv-assignment3
-python -m venv venv && source venv/bin/activate
+
+# Create and activate virtual environment
+python -m venv venv
+
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Install PyTorch (select based on your system):
+# For CUDA 12.1 (most Windows/Linux with NVIDIA GPU):
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# For CPU-only or Mac:
+pip install torch torchvision torchaudio
 ```
 
-Place your `dataset_wrapper.py` (provided by lecturer) in the root of the repo.
 
 ---
 
