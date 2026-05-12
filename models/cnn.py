@@ -38,7 +38,22 @@ class PetCNN(nn.Module):
                  use_batchnorm=True, activation='relu', use_residual=False):
         super().__init__()
 
+        # Safety: can't have more layers than the image can survive halving
+        max_layers = 0
+        size = img_size
+        while size >= 2:
+            size //= 2
+            max_layers += 1
+        if num_layers > max_layers:
+            raise ValueError(
+                f"Cannot have {num_layers} layers with {img_size}×{img_size} images. "
+                f"Maximum is {max_layers} (image would shrink to 0 after {max_layers+1} MaxPools). "
+                f"Use --img_size 128 for 7-layer experiments."
+            )
+
         self.use_residual = use_residual
+        self.num_layers = num_layers
+        self.img_size = img_size
 
         # ── Activation function ──
         if activation == 'relu':
@@ -92,6 +107,9 @@ class PetCNN(nn.Module):
         # ── Calculate feature map size after all pooling ──
         feature_size = img_size // (2 ** num_layers)
         n_features = channels[num_layers - 1] * feature_size * feature_size
+
+        print(f"  CNN: {num_layers} layers, feature map: {feature_size}×{feature_size}, "
+              f"fc input: {n_features}")
 
         # ── Classification head ──
         self.classifier = nn.Sequential(
