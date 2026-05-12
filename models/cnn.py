@@ -9,7 +9,7 @@ Supports all required ablation experiments:
   - Depth: 3-7 convolutional layers
   - Residual: optional skip connections
 
-Mathes lecturer's PyTorch style: clean nn.Module, clear forward pass.
+Matches lecturer's PyTorch style: clean nn.Module, clear forward pass.
 """
 
 import torch
@@ -20,9 +20,9 @@ class PetCNN(nn.Module):
     """
     Configurable CNN for 4-class pet breed classification.
 
-    Architecture: Conv blocks → Flatten → FC layers → Output
+    Architecture: Conv blocks -> Flatten -> FC layers -> Output
 
-    Each conv block: Conv2d → (optional BatchNorm) → Activation → MaxPool
+    Each conv block: Conv2d -> (optional BatchNorm) -> Activation -> MaxPool
     Optional residual: output = Conv(x) + x  (when shapes match)
 
     Args:
@@ -38,6 +38,8 @@ class PetCNN(nn.Module):
                  use_batchnorm=True, activation='relu', use_residual=False):
         super().__init__()
 
+        self.use_residual = use_residual
+
         # ── Activation function ──
         if activation == 'relu':
             act_fn = nn.ReLU(inplace=True)
@@ -50,12 +52,12 @@ class PetCNN(nn.Module):
                              f"Choose 'relu', 'leaky_relu', or 'gelu'")
 
         # ── Build conv layers ──
-        # Channel progression: 3 → 16 → 32 → 64 → 128 → 256 → 512
+        # Channel progression: 3 -> 16 -> 32 -> 64 -> 128 -> 256 -> 512
         in_channels = 3  # RGB input
         channels = [16, 32, 64, 128, 256, 512, 512]  # max 7 layers
 
         self.conv_layers = nn.ModuleList()
-        self.residual_projections = nn.ModuleList()  # for skip connections
+        self.residual_projections = nn.ModuleList()
 
         for i in range(num_layers):
             out_channels = channels[i]
@@ -77,7 +79,7 @@ class PetCNN(nn.Module):
 
             self.conv_layers.append(nn.Sequential(*layers))
 
-            # Projection for residual if channel dimensions differ
+            # Projection for residual when channel dimensions differ
             if use_residual and in_channels != out_channels:
                 self.residual_projections.append(
                     nn.Conv2d(in_channels, out_channels, kernel_size=1)
@@ -88,7 +90,6 @@ class PetCNN(nn.Module):
             in_channels = out_channels
 
         # ── Calculate feature map size after all pooling ──
-        # Each MaxPool(2,2) halves spatial dimensions
         feature_size = img_size // (2 ** num_layers)
         n_features = channels[num_layers - 1] * feature_size * feature_size
 
@@ -112,15 +113,15 @@ class PetCNN(nn.Module):
         for i, conv_layer in enumerate(self.conv_layers):
             residual = x
 
-            # Main path
+            # Main path through conv block
             out = conv_layer(x)
 
-            # Residual connection (if enabled and dimensions allow)
-            if len(self.residual_projections) > 0:
+            # Residual connection (only if use_residual flag is True)
+            if self.use_residual:
                 proj = self.residual_projections[i]
                 if proj is not None:
                     residual = proj(residual)
-                # Pool residual to match conv output size
+                # Pool residual to match conv output spatial size
                 residual = nn.functional.max_pool2d(residual, kernel_size=2, stride=2)
                 out = out + residual
 

@@ -87,7 +87,7 @@ def run_training(
 
     # ── LR scheduler: reduce on plateau to help convergence ──
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=0.5, patience=3, verbose=True
+        optimizer, mode='max', factor=0.5, patience=3, verbose=False
     )
 
     # ── TensorBoard writer (mirrors lecturer's usage) ──
