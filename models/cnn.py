@@ -1,150 +1,168 @@
-# models/cnn.py
 """
-CNN model built from scratch for Oxford-IIIT Pets classification.
-4 classes: Long-haired cat, Short-haired cat, Long-haired dog, Short-haired dog.
+models/cnn.py
+-------------
+CNN built from scratch for AIML331 Assignment 3, Part 1.
 
-Supports all required ablation experiments:
-  - BatchNorm: with / without
-  - Activation: ReLU / LeakyReLU / GELU
-  - Depth: 3-7 convolutional layers
-  - Residual: optional skip connections
+Supports all ablation experiments:
+  - BatchNorm on/off
+  - Activation: 'relu', 'leaky_relu', 'gelu'
+  - Depth: num_layers in [3, 4, 5, 6, 7]
+  - Residual: output = Conv(BN(Act(x))) + x  (matches assignment diagram exactly)
 
-Matches lecturer's PyTorch style: clean nn.Module, clear forward pass.
+FIX vs previous version:
+  - Residual architecture now correctly matches the assignment diagram.
+    The diagram shows: skip added BEFORE MaxPool, so spatial dims always match.
+  - MaxPool applied AFTER residual addition.
+  - Projection conv on skip handles channel mismatch.
 """
 
 import torch
 import torch.nn as nn
 
 
+def get_activation(name: str) -> nn.Module:
+    """Returns activation module by name string."""
+    mapping = {
+        'relu':       nn.ReLU(inplace=True),
+        'leaky_relu': nn.LeakyReLU(0.1, inplace=True),
+        'gelu':       nn.GELU(),
+    }
+    if name not in mapping:
+        raise ValueError(f"Unknown activation '{name}'. Choose from: {list(mapping.keys())}")
+    return mapping[name]
+
+
+class ConvBlock(nn.Module):
+    """
+    Standard conv block (no residual):
+        Conv2d -> [BatchNorm2d] -> Activation -> MaxPool2d
+    """
+    def __init__(self, in_ch, out_ch, use_batchnorm=True, activation='relu'):
+        super().__init__()
+        layers = [nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=not use_batchnorm)]
+        if use_batchnorm:
+            layers.append(nn.BatchNorm2d(out_ch))
+        layers.append(get_activation(activation))
+        layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
+        self.block = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class ResidualConvBlock(nn.Module):
+    """
+    Residual conv block matching assignment diagram exactly:
+
+        Main path:  Conv -> [BN] -> Act
+        Skip path:  1x1 projection (if channels differ), else identity
+        Addition:   main_out + skip           <- spatial dims match here
+        Then:       MaxPool2d(2,2)            <- pool AFTER addition
+
+    So: output = MaxPool( Act(BN(Conv(x))) + skip(x) )
+
+    The key constraint: addition before pool means both tensors are [B, out_ch, H, W].
+    """
+    def __init__(self, in_ch, out_ch, use_batchnorm=True, activation='relu'):
+        super().__init__()
+
+        # Main path (no pool)
+        main = [nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=not use_batchnorm)]
+        if use_batchnorm:
+            main.append(nn.BatchNorm2d(out_ch))
+        main.append(get_activation(activation))
+        self.main_path = nn.Sequential(*main)
+
+        # Skip projection: match channels only (spatial dims unchanged here)
+        self.skip_proj = (
+            nn.Conv2d(in_ch, out_ch, kernel_size=1, bias=False)
+            if in_ch != out_ch else nn.Identity()
+        )
+
+        # Pool after addition
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+    def forward(self, x):
+        main_out = self.main_path(x)   # [B, out_ch, H, W]
+        skip     = self.skip_proj(x)   # [B, out_ch, H, W]  <- same spatial size
+        out      = main_out + skip     # residual addition
+        return self.pool(out)          # [B, out_ch, H/2, W/2]
+
+
 class PetCNN(nn.Module):
     """
-    Configurable CNN for 4-class pet breed classification.
+    Configurable CNN for 4-class Oxford-IIIT Pets classification.
 
-    Architecture: Conv blocks -> Flatten -> FC layers -> Output
-
-    Each conv block: Conv2d -> (optional BatchNorm) -> Activation -> MaxPool
-    Optional residual: output = Conv(x) + x  (when shapes match)
+    Channel progression:
+        Layer:  1    2    3    4    5    6    7
+        Out ch: 16   32   64  128  256  512  512
 
     Args:
-        num_classes:    Output classes (4 for our dataset)
-        img_size:       Input image size (128 or 64)
-        num_layers:     Number of conv layers (3-7 for experiments)
-        use_batchnorm:  Toggle batch normalisation
-        activation:     'relu', 'leaky_relu', or 'gelu'
-        use_residual:   Add skip connections around conv blocks
+        num_classes:    4 for this assignment.
+        img_size:       128 (or 64).
+        num_layers:     Conv blocks in range [3, 7].
+        use_batchnorm:  Toggle BatchNorm for ablation.
+        activation:     'relu', 'leaky_relu', or 'gelu'.
+        use_residual:   Use ResidualConvBlock instead of ConvBlock.
     """
+
+    CHANNELS = [3, 16, 32, 64, 128, 256, 512, 512]
 
     def __init__(self, num_classes=4, img_size=128, num_layers=5,
                  use_batchnorm=True, activation='relu', use_residual=False):
         super().__init__()
 
-        # Safety: can't have more layers than the image can survive halving
+        # Validate depth
         max_layers = 0
-        size = img_size
-        while size >= 2:
-            size //= 2
+        s = img_size
+        while s >= 2:
+            s //= 2
             max_layers += 1
         if num_layers > max_layers:
             raise ValueError(
-                f"Cannot have {num_layers} layers with {img_size}×{img_size} images. "
-                f"Maximum is {max_layers} (image would shrink to 0 after {max_layers+1} MaxPools). "
-                f"Use --img_size 128 for 7-layer experiments."
+                f"Cannot use {num_layers} layers with {img_size}x{img_size}. "
+                f"Max is {max_layers}. Use img_size=128 for 7-layer experiments."
             )
 
-        self.use_residual = use_residual
-        self.num_layers = num_layers
-        self.img_size = img_size
+        BlockClass = ResidualConvBlock if use_residual else ConvBlock
 
-        # ── Activation function ──
-        if activation == 'relu':
-            act_fn = nn.ReLU(inplace=True)
-        elif activation == 'leaky_relu':
-            act_fn = nn.LeakyReLU(0.1, inplace=True)
-        elif activation == 'gelu':
-            act_fn = nn.GELU()
-        else:
-            raise ValueError(f"Unknown activation: {activation}. "
-                             f"Choose 'relu', 'leaky_relu', or 'gelu'")
-
-        # ── Build conv layers ──
-        # Channel progression: 3 -> 16 -> 32 -> 64 -> 128 -> 256 -> 512
-        in_channels = 3  # RGB input
-        channels = [16, 32, 64, 128, 256, 512, 512]  # max 7 layers
-
-        self.conv_layers = nn.ModuleList()
-        self.residual_projections = nn.ModuleList()
-
+        blocks = []
         for i in range(num_layers):
-            out_channels = channels[i]
-            layers = []
+            blocks.append(BlockClass(
+                in_ch=self.CHANNELS[i],
+                out_ch=self.CHANNELS[i + 1],
+                use_batchnorm=use_batchnorm,
+                activation=activation,
+            ))
+        self.features = nn.Sequential(*blocks)
 
-            # Conv2d
-            layers.append(nn.Conv2d(in_channels, out_channels,
-                                    kernel_size=3, padding=1))
+        # FC input: channels * spatial^2
+        feature_map_size = img_size // (2 ** num_layers)
+        fc_in = self.CHANNELS[num_layers] * feature_map_size * feature_map_size
 
-            # Optional BatchNorm
-            if use_batchnorm:
-                layers.append(nn.BatchNorm2d(out_channels))
+        print(f"  [PetCNN] layers={num_layers} | bn={use_batchnorm} | act={activation} | "
+              f"res={use_residual} | feature_map={feature_map_size}x{feature_map_size} | fc_in={fc_in}")
 
-            # Activation
-            layers.append(act_fn)
-
-            # MaxPool (always included)
-            layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
-
-            self.conv_layers.append(nn.Sequential(*layers))
-
-            # Projection for residual when channel dimensions differ
-            if use_residual and in_channels != out_channels:
-                self.residual_projections.append(
-                    nn.Conv2d(in_channels, out_channels, kernel_size=1)
-                )
-            else:
-                self.residual_projections.append(None)
-
-            in_channels = out_channels
-
-        # ── Calculate feature map size after all pooling ──
-        feature_size = img_size // (2 ** num_layers)
-        n_features = channels[num_layers - 1] * feature_size * feature_size
-
-        print(f"  CNN: {num_layers} layers, feature map: {feature_size}×{feature_size}, "
-              f"fc input: {n_features}")
-
-        # ── Classification head ──
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(n_features, 256),
+            nn.Linear(fc_in, 256),
             nn.ReLU(inplace=True),
             nn.Dropout(0.3),
             nn.Linear(256, 64),
             nn.ReLU(inplace=True),
             nn.Dropout(0.2),
-            nn.Linear(64, num_classes)
+            nn.Linear(64, num_classes),
         )
 
     def forward(self, x):
-        """
-        Forward pass with optional residual connections.
-        Residual: output = ConvBlock(x) + projected(x)
-        """
-        for i, conv_layer in enumerate(self.conv_layers):
-            residual = x
-
-            # Main path through conv block
-            out = conv_layer(x)
-
-            # Residual connection (only if use_residual flag is True)
-            if self.use_residual:
-                proj = self.residual_projections[i]
-                if proj is not None:
-                    residual = proj(residual)
-                # Pool residual to match conv output spatial size
-                residual = nn.functional.max_pool2d(residual, kernel_size=2, stride=2)
-                out = out + residual
-
-            x = out
-
-        # Classification
+        x = self.features(x)
         x = self.classifier(x)
         return x
+
+
+if __name__ == '__main__':
+    dummy = torch.randn(4, 3, 128, 128)
+    for use_res in [False, True]:
+        m = PetCNN(num_layers=5, use_batchnorm=True, activation='relu', use_residual=use_res)
+        out = m(dummy)
+        print(f"  res={use_res} -> output {out.shape}")
