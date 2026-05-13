@@ -150,9 +150,16 @@ All experiments were run at **64×64** resolution, **20 epochs**, batch size **3
 tensorboard --logdir=runs/
 ```
 
-<!-- Add screenshots to images/ and link them here as you go -->
-<!-- Example: ![CNN Loss Curve](images/cnn_loss_curve.png) -->
+### CNN Training Curves
 
+![CNN Loss: BatchNorm vs No BatchNorm](images/BatchNormVsNoBatchNorm.png)
+![CNN Accuracy: Activation Comparison](images/activationfunctioncomparison.png)
+![CNN Accuracy: Depth Ablation](images/depthablation.png)
+
+### ViT Training Curves
+
+![ViT Loss: Baseline](images/ViTbaseline.png)
+![ViT Accuracy: Layer Depth Comparison](images/layerdepthcomparison.png)
 ---
 
 ## CNN vs ViT Comparison
