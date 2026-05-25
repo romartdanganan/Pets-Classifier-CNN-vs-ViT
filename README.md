@@ -63,8 +63,8 @@ Pets-Classifier-CNN-vs-ViT/
 ## Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/aiml331-cv-assignment3.git
-cd aiml331-cv-assignment3
+git clone https://github.com/romartdanganan/Pets-Classifier-CNN-vs-ViT.git
+cd Pets-Classifier-CNN-vs-ViT
 
 # Create and activate virtual environment
 python -m venv venv
